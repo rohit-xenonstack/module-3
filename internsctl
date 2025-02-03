@@ -1,0 +1,204 @@
+#!/bin/bash
+
+VERSION="v0.1.0"
+
+function show_version() {
+  echo ${VERSION}
+}
+
+function show_help() {
+  printf "\n Usage: internsctl [OPTIONS] [INPUT_FILE]..."
+  printf "\n Options:"
+  printf "\n --help                               display this help document"
+  printf "\n --version                            display version number of the command"
+  printf "\n\n [cpu | memory] getinfo               give output similar to lscpu and free inbuilt commands"
+  printf "\n\n user create <username>               create user that can login to linux system"
+  printf "\n user list [OPTIONS]                  list all regular users"
+  printf "\n --sudo-only                          list only users with sudo access"
+  printf "\n\n file getinfo [OPTIONS] <file-name>   print general information for a file"
+  printf "\n --size, -s                           print the file size"
+  printf "\n --permissions, -p                    print the file permissions"
+  printf "\n --owner, -o                          print the file owner"
+  printf "\n --last-modified, -m                  print the last modified date for file "
+  printf "\n\n Example:"
+  printf "\n internsctl --version"
+  printf "\n v0.1.0 \n"
+}
+
+function pipe_lscpu() {
+  lscpu
+}
+
+function pipe_free() {
+  free
+}
+
+function create_user() {
+  USERNAME=$1
+  echo "Creating user ${USERNAME}"
+  sudo useradd --create-home "${USERNAME}"
+  echo "Please create a pasword for ${USERNAME}"
+  sudo passwd "${USERNAME}"
+  echo "User account for ${USERNAME} created successfuly."
+}
+
+function list_regular_users() {
+  awk -F':' '$3 > 999 && $1 != "nobody" {print $1}' /etc/passwd
+}
+
+function list_sudoers() {
+  awk -F':' '$1 != "nobody" {print $1}' /etc/passwd |
+    sudo xargs -L1 sudo --list -U |
+    grep --invert-match 'not allowed' |
+    grep --perl-regexp --only-matching 'Matching Defaults entries for \K[^ ]+'
+}
+
+function get_file_name() {
+  stat --format %n "${1}"
+}
+function get_file_access() {
+  stat --format %A "${1}"
+}
+function get_file_size() {
+  stat --format %s "${1}"
+}
+function get_file_owner() {
+  stat --format %U "${1}"
+}
+function get_file_modification_time() {
+  stat --format %y "${1}"
+}
+
+function get_file_info() {
+  local name access size owner modified
+
+  name=$(get_file_name "${1}")
+  access=$(get_file_access "${1}")
+  size=$(get_file_size "${1}")
+  owner=$(get_file_owner "${1}")
+  modified=$(get_file_modification_time "${1}")
+
+  echo ""
+  echo "File: ${name}"
+  echo "Access: ${access}"
+  echo "Size(B): ${size}"
+  echo "Owner: ${owner}"
+  echo "Modify: ${modified}"
+  echo ""
+}
+# show_version
+# pipe_lscpu
+# create_user test-boy
+# list_regular_users
+# list_sudoers
+# get_file_info "${1}"
+# get_file_modification_time "${1}"
+
+ARGS=("$@")
+
+if [ "$#" -eq 0 ]; then
+  echo "failed: no arguments provided" >&2
+  exit 1
+fi
+
+case ${ARGS[0]} in
+"--help" | "-h")
+  if [[ "$#" -eq 1 ]]; then
+    show_help
+  else
+    echo "Invalid command" >&2
+    exit 1
+  fi
+  ;;
+
+"--version" | "-v")
+  if [[ "$#" -eq 1 ]]; then
+    show_version
+  else
+    echo "Invalid command" >&2
+    exit 1
+  fi
+  ;;
+
+"cpu")
+  if [[ "${ARGS[1]}" == "getinfo" ]] && [[ "$#" -eq 2 ]]; then
+    pipe_lscpu
+  else
+    echo "Invalid Command" >&2
+    exit 1
+  fi
+  ;;
+
+"memory")
+  if [[ "${ARGS[1]}" == "getinfo" ]] && [[ "$#" -eq 2 ]]; then
+    pipe_free
+  else
+    echo "Invalid Command" >&2
+    exit 1
+  fi
+  ;;
+
+"user")
+  if [[ ${ARGS[1]} == "create" ]]; then
+    if [[ -n ${ARGS[2]} ]] && [[ "$#" -eq 3 ]]; then
+      create_user "${ARGS[2]}"
+    else
+      echo "failed: provide valid username" >&2
+      exit 1
+    fi
+  elif [[ ${ARGS[1]} == "list" ]]; then
+    if [[ "$#" -eq 2 ]]; then
+      list_regular_users
+    elif [[ ${ARGS[2]} == "--sudo-only" ]] && [[ "$#" -eq 3 ]]; then
+      list_sudoers
+    else
+      echo "Invalid Command" >&2
+      exit 1
+    fi
+  else
+    echo "Invalid Command" >&2
+    exit 1
+  fi
+  ;;
+
+"file")
+  if [[ ${ARGS[1]} == "getinfo" ]]; then
+    if [[ -n ${ARGS[2]} ]]; then
+      if [ ! -f "${ARGS[2]}" ]; then
+        echo "fales: file not found!" >&2
+        exit 1
+      elif [[ "$#" -eq 3 ]]; then
+        get_file_info "${ARGS[2]}"
+      elif [[ "$#" -eq 4 ]]; then
+        if [[ "${ARGS[3]}" == "--size" ]] || [[ "${ARGS[3]}" == "-s" ]]; then
+          get_file_size "${ARGS[2]}"
+        elif [[ "${ARGS[3]}" == "--permissions" ]] || [[ "${ARGS[3]}" == "-p" ]]; then
+          get_file_access "${ARGS[2]}"
+        elif [[ "${ARGS[3]}" == "--owner" ]] || [[ "${ARGS[3]}" == "-o" ]]; then
+          get_file_owner "${ARGS[2]}"
+        elif [[ "${ARGS[3]}" == "--last-modified" ]] || [[ "${ARGS[3]}" == "-m" ]]; then
+          get_file_modification_time "${ARGS[2]}"
+        else
+          echo "Invalid command" >&2
+          exit 1
+        fi
+      else
+        echo "Invalid command" >&2
+        exit 1
+      fi
+    else
+      echo "failed: provide valid file name" >&2
+      exit 1
+    fi
+  else
+    echo "Invalid command" >&2
+    exit 1
+  fi
+  ;;
+
+*)
+  echo "Invalid command" >&2
+  exit 1
+  ;;
+
+esac
